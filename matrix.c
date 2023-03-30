@@ -2,6 +2,17 @@
 #include <stdlib.h>
 #include "matrix.h"
 
+int** createMatrix(int rows, int cols){
+    // Allocating memory for the matrix
+    int** matrix = (int**) malloc(rows * sizeof(int*));
+
+    // Allocating memory for each row
+    for(int i = 0; i < rows; i++){
+        matrix[i] = (int*) malloc(cols * sizeof(int));
+    }
+
+    return matrix;
+}
 
 /*
     Counts the number of neighbors of a cell in the matrix
@@ -101,10 +112,7 @@ int** parseMatrix(char* filename){
     fscanf(file, "%d %d", &rows, &cols);
 
     // Allocating memory for the matrix based on the numbers we just read
-    int** matrix = (int**)malloc(rows * sizeof(int*));
-    for(int i = 0; i < rows; i++){
-        matrix[i] = (int*)malloc(cols * sizeof(int));
-    }
+    int** matrix = createMatrix(rows, cols);
 
     int buffer_size = /* columns + separators */ cols * 2 + 1 
                     + /*\n*/ 1 
@@ -122,9 +130,6 @@ int** parseMatrix(char* filename){
     for(int i = 0; i < rows; i++){
         // Reading the line
         fgets(line, buffer_size, file);
-
-        // Printing the line
-        printf("%s", line);
 
         // Parsing the line
         for(int j = 0; j < cols; j++){
@@ -162,6 +167,18 @@ void writeMatrix(char* filename, int** matrix, int rows, int cols){
 
     // Closing the file
     fclose(file);
+
+    return;
+}
+
+void freeMatrix(int** matrix, int rows){
+    // Freeing the memory allocated for each row
+    for(int i = 0; i < rows; i++){
+        free(matrix[i]);
+    }
+
+    // Freeing the memory allocated for the matrix
+    free(matrix);
 
     return;
 }

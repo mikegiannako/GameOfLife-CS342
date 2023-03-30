@@ -8,7 +8,7 @@
 #define OUTPUT_ON 1
 
 int getArg(char* arg, int argc, char* argv[]);
-void applyGameOfLife(int** matrix, int rows, int cols, int num_threads);
+int** applyGameOfLife(int** matrix, int rows, int cols, int num_threads);
 
 /* 
     The first command-line argument specifies the input file
@@ -37,7 +37,7 @@ int main(int argc, char *argv[]){
     int num_threads = atoi(argv[2]);
 
     // Setting the number of threads to the OpenMP environment
-    // omp_set_num_threads(num_threads);
+    omp_set_num_threads(num_threads);
 
     // Reading the number of iterations
     int iterations = DEFAULT_ITERS;
@@ -49,7 +49,7 @@ int main(int argc, char *argv[]){
     // Apply the Game of Life algorithm for the specified number of iterations
     for(int i = 0; i < iterations; i++){
         // Applying the algorithm
-        applyGameOfLife(matrix, rows, cols, num_threads);
+        matrix = applyGameOfLife(matrix, rows, cols, num_threads);
     }
 
     // Reading the output flag
@@ -92,6 +92,20 @@ int getArg(char* arg, int argc, char* argv[]){
     Applies the Game of Life algorithm to the matrix
     The algorithm is applied in parallel using OpenMP
 */
-void applyGameOfLife(int** matrix, int rows, int cols, int num_threads){
+int** applyGameOfLife(int** matrix, int rows, int cols, int num_threads){
+    // Creating a new matrix to store the new values
+    int** new_matrix = createMatrix(rows, cols);
 
+    // Applying the algorithm
+    #pragma omp parallel for num_threads(num_threads) collapse(2) shared(matrix, new_matrix, rows, cols)
+    for(int i = 0; i < rows; i++){
+        for(int j = 0; j < cols; j++){
+            new_matrix[i][j] = applyRules(matrix, rows, cols, i, j);
+        }
+    }
+
+    // Freeing the old matrix
+    freeMatrix(matrix, rows);
+
+    return new_matrix;
 }

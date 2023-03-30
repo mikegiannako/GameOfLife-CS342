@@ -4,6 +4,7 @@
 #define DEAD 0
 #define ALIVE 1
 
+int** createMatrix(int rows, int cols);
 int countNeighbors(int** matrix, int rows, int cols, int row, int col);
 int applyRules(int** matrix, int rows, int cols, int row, int col);
 void readRowsCols(char* filename, int* rows, int* cols);
