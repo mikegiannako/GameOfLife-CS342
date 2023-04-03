@@ -3,12 +3,24 @@
 #include <string.h>
 #include <omp.h>
 #include "matrix.h"
+#include "hashset.h"
 
 #define DEFAULT_ITERS 100
 #define OUTPUT_ON 1
+#define HASHSET_DIVISOR 5
+
+typedef struct args_t{
+    cell_t** matrix;
+    hashset_t hashset;
+    listnode_t* list;
+    int rows;
+    int cols;
+}* args_t;
 
 int getArg(char* arg, int argc, char* argv[]);
-int** applyGameOfLife(int** matrix, int rows, int cols, int num_threads);
+int applyGameOfLifeToCell(int key, Status status, void* args);
+int updateValueOfCell(int key, Status status, void* args);
+int addListNodeToHashSet(int key, void* args);
 
 /* 
     The first command-line argument specifies the input file
@@ -30,14 +42,20 @@ int main(int argc, char *argv[]){
     int rows, cols;
     readRowsCols(argv[1], &rows, &cols);
 
-    // Reading the matrix from the input file
-    int** matrix = parseMatrix(argv[1]);
-
     // Reading the number of threads
     int num_threads = atoi(argv[2]);
 
-    // Setting the number of threads to the OpenMP environment
-    omp_set_num_threads(num_threads);
+    #ifndef SERIAL
+        // Setting the number of threads to the OpenMP environment
+        omp_set_num_threads(num_threads);
+    #endif
+
+    // Creating the hashset and a list of cells to be added to the hashset 
+    hashset_t hashset = createHashSet((rows * cols) / HASHSET_DIVISOR, num_threads);
+    listnode_t list = NULL;
+
+    // Reading the matrix from the input file
+    cell_t** matrix = parseMatrix(argv[1], hashset, &list);
 
     // Reading the number of iterations
     int iterations = DEFAULT_ITERS;
@@ -46,10 +64,25 @@ int main(int argc, char *argv[]){
         iterations = atoi(argv[arg_index]);
     }
 
+    // Creating the arguments for the applyGameOfLifeToCell function
+    args_t args = (args_t) malloc(sizeof(struct args_t));
+    args->matrix = matrix;
+    args->hashset = hashset;
+    args->list = &list;
+    args->rows = rows;
+    args->cols = cols;
+
+    // Getting all the items to be added to the hashset
+    applyList(&list, addListNodeToHashSet, (void*) hashset);
+    freeList(&list);
+
     // Apply the Game of Life algorithm for the specified number of iterations
     for(int i = 0; i < iterations; i++){
         // Applying the algorithm
-        matrix = applyGameOfLife(matrix, rows, cols, num_threads);
+        applyHashSet(hashset, applyGameOfLifeToCell, (void*) args);
+        applyHashSet(hashset, updateValueOfCell, (void*) args);
+        applyList(&list, addListNodeToHashSet, (void*) hashset);
+        freeList(&list);
     }
 
     // Reading the output flag
@@ -63,6 +96,9 @@ int main(int argc, char *argv[]){
     if(output){
         writeMatrix(argv[3], matrix, rows, cols);
     }
+
+    // Freeing the matrix
+    freeMatrix(matrix, rows, cols, num_threads);
     
     return 0;
 }
@@ -88,24 +124,67 @@ int getArg(char* arg, int argc, char* argv[]){
     return -1;
 }
 
-/* 
-    Applies the Game of Life algorithm to the matrix
-    The algorithm is applied in parallel using OpenMP
+/*
+    Function to be passed to the hashset apply function
+    It applies the Game of Life algorithm to the cell
 */
-int** applyGameOfLife(int** matrix, int rows, int cols, int num_threads){
-    // Creating a new matrix to store the new values
-    int** new_matrix = createMatrix(rows, cols);
+int applyGameOfLifeToCell(int key, Status status, void* args){
+    // Getting the arguments
+    args_t arguments = (args_t) args;
+    cell_t** matrix = arguments->matrix;
+    hashset_t hashset = arguments->hashset;
+    listnode_t* list = arguments->list;
+    int rows = arguments->rows;
+    int cols = arguments->cols;
+    int x = key / cols;
+    int y = key % cols;
 
-    // Applying the algorithm
-    #pragma omp parallel for num_threads(num_threads) collapse(2) shared(matrix, new_matrix, rows, cols)
-    for(int i = 0; i < rows; i++){
-        for(int j = 0; j < cols; j++){
-            new_matrix[i][j] = applyRules(matrix, rows, cols, i, j);
-        }
+    // Applying the rules
+    matrix[x][y]->next_val = applyRules(matrix, rows, cols, x, y);
+    
+    // If the cell will be alive in the next iteration, add all its neighbors to the hashset
+    if(matrix[x][y]->next_val == ALIVE){
+        addAllNeighbors(list, rows, cols, x, y);
+        return 1;
     }
 
-    // Freeing the old matrix
-    freeMatrix(matrix, rows);
+    // Else, if the cell will be dead in the next iteration, set it to inactive
+    setActiveHashSet(hashset, key, INACTIVE);
+    return 1;
+}
 
-    return new_matrix;
+/*
+    Function to be passed to the hashset apply function
+    It udpates the value of the cell
+*/
+int updateValueOfCell(int key, Status status, void* args){
+    // Getting the arguments
+    args_t arguments = (args_t) args;
+    cell_t** matrix = arguments->matrix;
+    int cols = arguments->cols;
+    int x = key / cols;
+    int y = key % cols;
+
+    // Updating the value of the cell
+    matrix[x][y]->curr_val = matrix[x][y]->next_val;
+
+    if(status == INACTIVE){
+        return 0;
+    }
+
+    return 1;
+}
+
+/*
+    Function that will be passed to the list apply function
+    it adds all the nodes of the list to the hashset
+*/
+int addListNodeToHashSet(int key, void* args){
+    // Getting the arguments
+    hashset_t hashset = (hashset_t) args;
+
+    // Adding the node to the hashset
+    addHashSet(hashset, key, ACTIVE);
+
+    return 1;
 }
